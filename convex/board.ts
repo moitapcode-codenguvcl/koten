@@ -29,13 +29,11 @@ export const create = mutation({
 
     const randomImage = images[Math.floor(Math.random() * images.length)];
 
-    console.log(randomImage, "TEST")
-
     const board = await ctx.db.insert("boards", {
       title: args.title,
       orgId: args.orgId,
       authorId: identity.subject,
-      authorName: identity.name!,
+      authorName: identity.name ?? identity.email ?? "Unknown",
       imageUrl: randomImage,
     });
 
@@ -54,12 +52,20 @@ export const remove = mutation({
 
     const userId = identity.subject;
 
+    const board = await ctx.db.get(args.id);
+
+    if (!board) {
+      throw new Error("Board not found");
+    }
+
+    if (board.authorId !== userId) {
+      throw new Error("Unauthorized");
+    }
+
     const existingFavorite = await ctx.db
       .query("userFavorites")
-      .withIndex("by_user_board", (q) => 
-        q
-          .eq("userId", userId)
-          .eq("boardId", args.id)
+      .withIndex("by_user_board", (q) =>
+        q.eq("userId", userId).eq("boardId", args.id)
       )
       .unique();
 
@@ -80,6 +86,16 @@ export const update = mutation({
       throw new Error("Unauthorized");
     }
 
+    const existingBoard = await ctx.db.get(args.id);
+
+    if (!existingBoard) {
+      throw new Error("Board not found");
+    }
+
+    if (existingBoard.authorId !== identity.subject) {
+      throw new Error("Unauthorized");
+    }
+
     const title = args.title.trim();
 
     if (!title) {
@@ -87,11 +103,11 @@ export const update = mutation({
     }
 
     if (title.length > 60) {
-      throw new Error("Title cannot be longer than 60 characters")
+      throw new Error("Title cannot be longer than 60 characters");
     }
 
     const board = await ctx.db.patch(args.id, {
-      title: args.title,
+      title,
     });
 
     return board;
@@ -113,14 +129,16 @@ export const favorite = mutation({
       throw new Error("Board not found");
     }
 
+    if (board.orgId !== args.orgId) {
+      throw new Error("Unauthorized");
+    }
+
     const userId = identity.subject;
 
     const existingFavorite = await ctx.db
       .query("userFavorites")
-      .withIndex("by_user_board", (q) => 
-        q
-          .eq("userId", userId)
-          .eq("boardId", board._id)
+      .withIndex("by_user_board", (q) =>
+        q.eq("userId", userId).eq("boardId", board._id)
       )
       .unique();
 
@@ -137,7 +155,6 @@ export const favorite = mutation({
     return board;
   },
 });
-
 
 export const unfavorite = mutation({
   args: { id: v.id("boards") },
@@ -158,10 +175,8 @@ export const unfavorite = mutation({
 
     const existingFavorite = await ctx.db
       .query("userFavorites")
-      .withIndex("by_user_board", (q) => 
-        q
-          .eq("userId", userId)
-          .eq("boardId", board._id)
+      .withIndex("by_user_board", (q) =>
+        q.eq("userId", userId).eq("boardId", board._id)
       )
       .unique();
 
@@ -178,7 +193,7 @@ export const unfavorite = mutation({
 export const get = query({
   args: { id: v.id("boards") },
   handler: async (ctx, args) => {
-    const board = ctx.db.get(args.id);
+    const board = await ctx.db.get(args.id);
 
     return board;
   },
